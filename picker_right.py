@@ -18,6 +18,10 @@ import pybullet_envs
 import stable_baselines3 as sb3
 from sb3_contrib import TRPO
 
+from torch.utils.tensorboard import SummaryWriter
+import datetime
+
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 Transition = namedtuple('Transition',
@@ -94,8 +98,12 @@ memory = ReplayMemory(10000)
 steps_done = 0
 
 
-def select_action(state):
+def select_action(state,test=False):
     global steps_done
+    if test:
+        k=policy_net(state).argmax()
+        return int(k)
+
     sample = random.random()
     eps_threshold = EPS_END + (EPS_START - EPS_END) * \
         math.exp(-1. * steps_done / EPS_DECAY)
@@ -105,11 +113,12 @@ def select_action(state):
             # t.max(1) will return largest column value of each row.
             # second column on max result is index of where max element was
             # found, so we pick action with the larger expected reward.
-            k=policy_net(state).max(1)[1].view(1, 1)
+            k=policy_net(state).argmax()
             return int(k)
     else:
         k=np.random.randint(3)
         return int(k)
+
 
 episode_durations = []
 
@@ -137,6 +146,8 @@ def optimize_model():
     # Compute Q(s_t, a) - the model computes Q(s_t), then we select the
     # columns of actions taken. These are the actions which would've been taken
     # for each batch state according to policy_net
+    if state_batch.ndim >=3:
+        state_batch = torch.squeeze(state_batch)
     state_action_values = policy_net(state_batch).gather(1, action_batch)
 
     # Compute V(s_{t+1}) for all next states.
@@ -148,11 +159,12 @@ def optimize_model():
     with torch.no_grad():
         next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0]
     # Compute the expected Q values
+    next_state_values = next_state_values.unsqueeze(1)
     expected_state_action_values = (next_state_values * GAMMA) + reward_batch
 
     # Compute Huber loss
     criterion = nn.SmoothL1Loss()
-    loss = criterion(state_action_values, expected_state_action_values.unsqueeze(1))
+    loss = criterion(state_action_values, expected_state_action_values)
 
     # Optimize the model
     optimizer.zero_grad()
@@ -171,17 +183,25 @@ model_0 = sb3.PPO.load("PPO/mlp/ppo_Mlp+8",env)
 model_1 = TRPO.load("TRPO/mlp/trpo_Mlp+14",env)
 model_2 = sb3.SAC.load("SAC/mlp/sac_Mlp+28",env)
 
+writer = SummaryWriter('./runs/{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")))
 
 for i_episode in range(30):
+    print(i_episode)
+    #if i_episode%10==0:
+    #    for k in range(5):
     #state, _ = env.reset(return_info=True)
     state = env.reset()
-    obs = torch.tensor(state, dtype=torch.float32, device=device).unsqueeze(0)
+    total_reward = 0
+    obs = torch.tensor(state, dtype=torch.float32, device=device)
     for t in count():
         pick_action = select_action(obs)
+        #pick_action = select_action(obs,True) #test면
         privious_state=obs
         picker_reward = 0
 
         for ii in range(10):
+            if state.ndim>1:
+                state = state[0]
             if pick_action==0:
                 action = model_0.predict(state, deterministic=True)
             elif pick_action==1:
@@ -194,33 +214,45 @@ for i_episode in range(30):
             right_before_state = state
             state, rewards, dones, info = env.step(action)
             picker_reward +=rewards
+            total_reward+=rewards
             if dones:
                 break
         if dones:
-            picker_next_state = right_before_state
+            picker_next_state = None
         else:
-            picker_next_state = state
-        
-        #picker_next_state=torch.tensor(picker_next_state, dtype=torch.float32, device=device).unsqueeze(0)
-        #picker_reward=torch.tensor(picker_reward, dtype=torch.float32, device=device).unsqueeze(0)
-        
-        memory.push(privious_state, pick_action, picker_next_state, picker_reward)
+            picker_next_state = state        
+            picker_next_state=torch.tensor(picker_next_state, dtype=torch.float32, device=device)
         state = picker_next_state
+        picker_reward=torch.tensor(picker_reward, dtype=torch.float32, device=device)
+        pick_action=torch.tensor(pick_action, dtype=torch.int64, device=device)
+        privious_state=torch.tensor(privious_state, dtype=torch.float32, device=device)
+        if pick_action.ndim==0:
+            pick_action=torch.unsqueeze(pick_action, 0)
+        if picker_reward.ndim==0:
+            picker_reward=torch.unsqueeze(picker_reward, 0)
+
+        
+        #memory.push(privious_state, pick_action, picker_next_state, picker_reward)
+        if picker_next_state is not None:#ㄴ나중에 제
+            memory.push(torch.unsqueeze(privious_state, 0),torch.unsqueeze(pick_action, 0),torch.unsqueeze(picker_next_state, 0),torch.unsqueeze(picker_reward, 0))
+        else:#ㄴ나중에 제
+            memory.push(torch.unsqueeze(privious_state, 0),torch.unsqueeze(pick_action, 0),None,torch.unsqueeze(picker_reward, 0))
+        
 
         # Perform one step of the optimization (on the policy network)
-        optimize_model()
+        optimize_model()#ㄴ나중에 제
 
         # Soft update of the target network's weights
         # θ′ ← τ θ + (1 −τ )θ′
-        target_net_state_dict = target_net.state_dict()
-        policy_net_state_dict = policy_net.state_dict()
-        for key in policy_net_state_dict:
-            target_net_state_dict[key] = policy_net_state_dict[key]*TAU + target_net_state_dict[key]*(1-TAU)
+        target_net_state_dict = target_net.state_dict()#ㄴ나중에 제
+        policy_net_state_dict = policy_net.state_dict()#ㄴ나중에 제
+        for key in policy_net_state_dict:#ㄴ나중에 제
+            target_net_state_dict[key] = policy_net_state_dict[key]*TAU + target_net_state_dict[key]*(1-TAU)#ㄴ나중에 제
         target_net.load_state_dict(target_net_state_dict)
 
         if dones:
             #episode_durations.append(t + 1)
             break
-
+    writer.add_scalar('Reward', total_reward, i_episode)
 
 print('Complete')

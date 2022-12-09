@@ -36,10 +36,10 @@ model = sb3.PPO.load("PPO/mlp/ppo_Mlp+8",env)
 # action, _states = model.predict(obs, deterministic=True)
 #print(action)
 
-# mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=5)
-# print("=============================================================")
-# print("@ mean_reward : " , mean_reward)
-# print("@ std_reward : " , std_reward)
+#mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=5)
+#print("=============================================================")
+#print("@ mean_reward : " , mean_reward)
+#print("@ std_reward : " , std_reward)
 
 
 # mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=10)

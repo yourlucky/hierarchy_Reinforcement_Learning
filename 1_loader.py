@@ -14,15 +14,15 @@ from stable_baselines3.common.evaluation import evaluate_policy
 env = gym.make("AntBulletEnv-v0")
 
 #redering or not
-#env.render()
-model = sb3.PPO.load("PPO/mlp/ppo_Mlp+8",env)
+env.render()
+model = sb3.PPO.load("PPO/mlp/ppo_Mlp+38",env)
 #model = TRPO.load("TRPO/mlp/trpo_Mlp+14",env)
 #model = sb3.SAC.load("SAC/mlp/sac_Mlp+28",env)
 
-mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=5)
-print("=============================================================")
-print("@ mean_reward : " , mean_reward)
-print("@ std_reward : " , std_reward)
+#mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=5)
+#print("=============================================================")
+#print("@ mean_reward : " , mean_reward)
+#print("@ std_reward : " , std_reward)
 
 
 # mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=10)
