@@ -5,6 +5,8 @@ import numpy as np
 from collections import namedtuple, deque
 from itertools import count
 
+import pandas as pd
+
 import matplotlib
 import matplotlib.pyplot as plt
 
@@ -18,8 +20,9 @@ import pybullet_envs
 import stable_baselines3 as sb3
 from sb3_contrib import TRPO
 
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
 import datetime
+import csv
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -119,10 +122,6 @@ def select_action(state,test=False):
         k=np.random.randint(3)
         return int(k)
 
-
-episode_durations = []
-
-
 def optimize_model():
     if len(memory) < BATCH_SIZE:
         return
@@ -179,17 +178,81 @@ def optimize_model():
 #     num_episodes = 600
 # else:
 #     num_episodes = 50
-model_0 = sb3.PPO.load("PPO/mlp/ppo_Mlp+8",env)
-model_1 = TRPO.load("TRPO/mlp/trpo_Mlp+14",env)
-model_2 = sb3.SAC.load("SAC/mlp/sac_Mlp+28",env)
+model_0 = sb3.PPO.load("PPO/ac/ppo_ac+38",env)#1006
+model_1 = TRPO.load("TRPO/mlp/trpo_Mlp+16",env)#963
+model_2 = sb3.SAC.load("SAC/ac/sac_ac+50",env)#993
 
-writer = SummaryWriter('./runs/{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")))
+#writer = SummaryWriter('./runs/{}'.format(datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")))
 
-for i_episode in range(30):
+_index=[]
+_mean=[]
+_std=[]
+_count={'ppo':0,'trpo':0,'sac':0}
+picking_term = 20
+for i_episode in range(1,301):
     print(i_episode)
-    #if i_episode%10==0:
-    #    for k in range(5):
-    #state, _ = env.reset(return_info=True)
+    if i_episode%2==0:
+        static_reward=[]
+        for k in range(5):
+            state = env.reset()
+            total_reward = 0
+            obs = torch.tensor(state, dtype=torch.float32, device=device)
+            for t in count():
+                pick_action = select_action(obs,True)
+                #pick_action = select_action(obs,True) #test면
+                privious_state=obs
+                picker_reward = 0
+
+                for ii in range(picking_term):
+                    if state.ndim>1:
+                        state = state[0]
+                    if pick_action==0:
+                        action = model_0.predict(state, deterministic=True)
+                        _count['ppo']+=1
+                    elif pick_action==1:
+                        action = model_1.predict(state, deterministic=True)
+                        _count['trpo']+=1
+                    elif pick_action==2:
+                        action = model_2.predict(state, deterministic=True)
+                        _count['sac']+=1
+
+                    action=np.array(action[0],dtype=np.float32)
+
+                    right_before_state = state
+                    state, rewards, dones, info = env.step(action)
+                    picker_reward +=rewards
+                    total_reward+=rewards
+                    if dones:
+                        break
+                if dones:
+                    picker_next_state = None
+                else:
+                    picker_next_state = state        
+                    picker_next_state=torch.tensor(picker_next_state, dtype=torch.float32, device=device)
+                state = picker_next_state
+                picker_reward=torch.tensor(picker_reward, dtype=torch.float32, device=device)
+                pick_action=torch.tensor(pick_action, dtype=torch.int64, device=device)
+                privious_state=torch.tensor(privious_state, dtype=torch.float32, device=device)
+                if pick_action.ndim==0:
+                    pick_action=torch.unsqueeze(pick_action, 0)
+                if picker_reward.ndim==0:
+                    picker_reward=torch.unsqueeze(picker_reward, 0)
+            
+
+                if dones:
+                    break
+            static_reward.append(total_reward)
+        mean_reward=np.mean(static_reward)
+        std_reward=np.std(static_reward)
+        
+        print("reward : mean",mean_reward)
+        print("reward : std",std_reward)
+        print("raw : ",static_reward)
+        print("count : ",_count)
+        _index.append(i_episode)
+        _mean.append(mean_reward)
+        _std.append(std_reward)
+
     state = env.reset()
     total_reward = 0
     obs = torch.tensor(state, dtype=torch.float32, device=device)
@@ -199,7 +262,7 @@ for i_episode in range(30):
         privious_state=obs
         picker_reward = 0
 
-        for ii in range(10):
+        for ii in range(picking_term):
             if state.ndim>1:
                 state = state[0]
             if pick_action==0:
@@ -233,7 +296,7 @@ for i_episode in range(30):
 
         
         #memory.push(privious_state, pick_action, picker_next_state, picker_reward)
-        if picker_next_state is not None:#ㄴ나중에 제
+        if picker_next_state is not None:
             memory.push(torch.unsqueeze(privious_state, 0),torch.unsqueeze(pick_action, 0),torch.unsqueeze(picker_next_state, 0),torch.unsqueeze(picker_reward, 0))
         else:#ㄴ나중에 제
             memory.push(torch.unsqueeze(privious_state, 0),torch.unsqueeze(pick_action, 0),None,torch.unsqueeze(picker_reward, 0))
@@ -244,15 +307,26 @@ for i_episode in range(30):
 
         # Soft update of the target network's weights
         # θ′ ← τ θ + (1 −τ )θ′
-        target_net_state_dict = target_net.state_dict()#ㄴ나중에 제
-        policy_net_state_dict = policy_net.state_dict()#ㄴ나중에 제
-        for key in policy_net_state_dict:#ㄴ나중에 제
-            target_net_state_dict[key] = policy_net_state_dict[key]*TAU + target_net_state_dict[key]*(1-TAU)#ㄴ나중에 제
+        target_net_state_dict = target_net.state_dict()
+        policy_net_state_dict = policy_net.state_dict()
+        for key in policy_net_state_dict:
+            target_net_state_dict[key] = policy_net_state_dict[key]*TAU + target_net_state_dict[key]*(1-TAU)
         target_net.load_state_dict(target_net_state_dict)
 
         if dones:
             #episode_durations.append(t + 1)
             break
-    writer.add_scalar('Reward', total_reward, i_episode)
+
+
+raw_data = {'index': _index,
+            'mean': _mean,
+            'std': _std}
+df = pd.DataFrame(raw_data, columns = ['index','mean', 'std'])
+df.to_csv('picker_300_15_3.csv', index=False, header=True)
+
+with open('picker_Selection_15_3.csv','w') as csvfile:
+    writer = csv.DictWriter(csvfile, fieldnames=_count)
+    writer.writeheader()
+    writer.writerow(_count)
 
 print('Complete')

@@ -37,7 +37,7 @@ def graph_plot(filename, moving_average=0,color=None,label=None):
     _index=df['index'].to_numpy()
     _mean=df['mean'].to_numpy()
     _std=df['std'].to_numpy()
-    _std=_std*0.1
+    _std=_std*1.96
 
     #plt.errorbar(_index, _mean, yerr=_std)
     if moving_average==0:
@@ -61,13 +61,7 @@ if __name__ == "__main__":
     #graph_plot('ppo_Mlp.csv', moving_average=5, color='b',label='ppo')
     #graph_plot('sac_Mlp.csv', moving_average=5, color='y',label='sac')
     #graph_plot('trpo_Mlp.csv', moving_average=5, color='r',label='trpo')
-    
-    graph_plot('picker_200_1_2.csv', moving_average=5, color='b',label='1')  
-    graph_plot('picker_200_3_2.csv', moving_average=5, color='g',label='2')
-    graph_plot('picker_200_6_2.csv', moving_average=5, color='r',label='6')
-    graph_plot('picker_200_9_2.csv', moving_average=5, color='c',label='9')
-    graph_plot('picker_200_12_2.csv', moving_average=5, color='m',label='12')
-    graph_plot('picker_200_15_2.csv', moving_average=5, color='y',label='15')
+    graph_plot('picker_200_9.csv', moving_average=5, color='m',label='picker')
 
     #df = pd.read_csv("trpo_Mlp.csv", header=None)
     #df = pd.read_csv('trpo_Mlp.csv', header=None)
